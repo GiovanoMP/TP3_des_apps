@@ -1,5 +1,8 @@
 # Market Analysis AI
 
+[Visite o aplicativo](https://tp3desapps-un55mfy9dhtqvtfdubxvsh.streamlit.app/)
+
+
 Uma ferramenta de análise de mercado alimentada por IA que combina dados em tempo real do mercado financeiro com análise de sentimento e processamento de linguagem natural.
 
 ## Características
