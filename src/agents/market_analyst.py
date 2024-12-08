@@ -3,125 +3,89 @@ Agente Analista de Mercado
 Responsável por analisar dados de mercado e gerar insights estratégicos usando IA.
 """
 import os
-from langchain_community.chat_models import ChatOpenAI
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import MessagesPlaceholder
-from langchain_core.messages import SystemMessage
-from langchain.tools import Tool
+import google.generativeai as genai
 from typing import List, Dict
 import json
+import yfinance as yf
+from textblob import TextBlob
 
-class MarketAnalystAgent:
-    def __init__(self, openai_api_key: str):
-        # Inicializa o modelo de linguagem
-        self.llm = ChatOpenAI(
-            temperature=0.7,
-            model="gpt-3.5-turbo",
-            openai_api_key=openai_api_key
-        )
+class AgenteAnalistaMercado:
+    def __init__(self, google_api_key: str):
+        # Configurar o modelo Gemini
+        genai.configure(api_key=google_api_key)
+        self.model = genai.GenerativeModel('gemini-pro')
         
-        # Configura a memória
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Define as ferramentas
-        self.tools = [
-            Tool(
-                name="market_research",
-                func=self._market_research,
-                description="Realiza pesquisa de mercado para um setor específico. Input deve ser o nome do setor."
-            ),
-            Tool(
-                name="competitor_analysis",
-                func=self._competitor_analysis,
-                description="Analisa os principais competidores do setor. Input deve ser o nome do setor."
-            )
-        ]
-        
-        # Define o prompt do sistema
-        system_message = SystemMessage(
-            content="""Você é um analista de mercado especializado que ajuda a analisar mercados e competidores.
-            Use as ferramentas disponíveis para fornecer insights precisos e úteis.
-            Sempre explique seu raciocínio antes de usar uma ferramenta."""
-        )
-        
-        # Cria o agente
-        self.agent = create_react_agent(
-            llm=self.llm,
-            tools=self.tools,
-            system_message=system_message
-        )
-        
-        # Cria o executor do agente
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True,
-            handle_parsing_errors=True
-        )
-    
-    def _market_research(self, sector: str) -> str:
-        """Ferramenta para realizar pesquisa de mercado"""
-        market_data = {
-            "Tecnologia": {
-                "market_size": "US$ 5.2 trilhões globalmente",
-                "growth_rate": "5.4% ao ano",
-                "trends": ["IA", "Cloud Computing", "IoT"],
-                "challenges": ["Regulamentações", "Segurança Cibernética"]
-            },
-            "Varejo": {
-                "market_size": "US$ 25 trilhões globalmente",
-                "growth_rate": "4.8% ao ano",
-                "trends": ["E-commerce", "Omnichannel", "Personalização"],
-                "challenges": ["Logística", "Concorrência Online"]
-            },
-            "Serviços": {
-                "market_size": "US$ 6.8 trilhões globalmente",
-                "growth_rate": "3.9% ao ano",
-                "trends": ["Digitalização", "Automação", "Experiência do Cliente"],
-                "challenges": ["Qualificação Profissional", "Adaptação Digital"]
-            }
-        }
-        return json.dumps(market_data.get(sector, {}), ensure_ascii=False)
-    
-    def _competitor_analysis(self, sector: str) -> str:
-        """Ferramenta para análise de competidores"""
-        competitor_data = {
-            "Tecnologia": [
-                {"name": "Big Tech A", "market_share": "15%", "strengths": ["Inovação", "Capital"]},
-                {"name": "Tech Corp B", "market_share": "12%", "strengths": ["Alcance Global", "P&D"]}
-            ],
-            "Varejo": [
-                {"name": "Mega Store", "market_share": "20%", "strengths": ["Preço", "Logística"]},
-                {"name": "Shop Corp", "market_share": "18%", "strengths": ["Marca", "Localização"]}
-            ],
-            "Serviços": [
-                {"name": "Service Pro", "market_share": "10%", "strengths": ["Qualidade", "Reputação"]},
-                {"name": "Consult Corp", "market_share": "8%", "strengths": ["Expertise", "Network"]}
-            ]
-        }
-        return json.dumps(competitor_data.get(sector, []), ensure_ascii=False)
-    
-    def analyze(self, query: str) -> str:
-        """Processa uma consulta do usuário usando o framework ReAct"""
+    def get_stock_data(self, symbol: str) -> str:
+        """Obtém dados em tempo real de ações."""
         try:
-            response = self.agent_executor.invoke({"input": query})
-            return response["output"]
+            stock = yf.Ticker(symbol)
+            info = stock.info
+            current_price = info.get('currentPrice', 'N/A')
+            previous_close = info.get('previousClose', 'N/A')
+            volume = info.get('volume', 'N/A')
+            market_cap = info.get('marketCap', 'N/A')
+            if market_cap != 'N/A':
+                market_cap = f"${market_cap/1000000000:.2f}B"
+            
+            return f"""
+            Dados da ação {symbol}:
+            Preço atual: ${current_price}
+            Fechamento anterior: ${previous_close}
+            Volume: {volume}
+            Market Cap: {market_cap}
+            """
         except Exception as e:
-            return f"Erro na análise: {str(e)}"
+            return f"Erro ao obter dados da ação {symbol}: {str(e)}"
+
+    def analyze_market_sentiment(self, query: str) -> str:
+        """Analisa o sentimento do mercado baseado em uma consulta."""
+        analysis = TextBlob(query)
+        sentiment = analysis.sentiment.polarity
+        
+        if sentiment > 0:
+            return f"Sentimento POSITIVO detectado ({sentiment:.2f}). O mercado demonstra otimismo."
+        elif sentiment < 0:
+            return f"Sentimento NEGATIVO detectado ({sentiment:.2f}). O mercado demonstra cautela."
+        else:
+            return f"Sentimento NEUTRO detectado ({sentiment:.2f}). O mercado aparenta estabilidade."
+
+    def process_query(self, query: str) -> str:
+        """Processa a query do usuário e retorna uma resposta."""
+        
+        # Verifica se é uma consulta de ação
+        stock_symbols = [word for word in query.split() if word.isupper() and len(word) >= 2]
+        if stock_symbols:
+            stock_data = self.get_stock_data(stock_symbols[0])
+            context = f"Dados do mercado:\n{stock_data}"
+        else:
+            # Analisa sentimento do mercado
+            sentiment_analysis = self.analyze_market_sentiment(query)
+            context = f"Análise de sentimento:\n{sentiment_analysis}"
+        
+        # Gera resposta com o Gemini
+        prompt = f"""
+        Como analista de mercado especializado, responda à seguinte pergunta:
+        {query}
+        
+        Use estas informações como contexto:
+        {context}
+        
+        Forneça uma análise detalhada e profissional, incluindo:
+        1. Interpretação dos dados/sentimento
+        2. Possíveis implicações
+        3. Contexto do mercado atual
+        
+        Use uma linguagem clara e profissional.
+        """
+        
+        response = self.model.generate_content(prompt)
+        return response.text
 
 def main():
-    openai_api_key = os.getenv('OPENAI_API_KEY')
-    if not openai_api_key:
-        raise ValueError("OPENAI_API_KEY não encontrada. Configure a variável de ambiente.")
-    
-    agent = MarketAnalystAgent(openai_api_key)
-    query = "Qual é o tamanho do mercado de tecnologia?"
-    response = agent.analyze(query)
+    # Exemplo de uso
+    api_key = os.getenv("GOOGLE_API_KEY")
+    agent = AgenteAnalistaMercado(api_key)
+    response = agent.process_query("Como está o mercado de tecnologia?")
     print(response)
 
 if __name__ == "__main__":
